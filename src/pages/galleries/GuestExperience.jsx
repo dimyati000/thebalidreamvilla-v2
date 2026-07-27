@@ -116,7 +116,7 @@ const AUTO_SCROLL_SPEED = 65;
 /* Interval pergantian background */
 const BACKGROUND_DELAY = 5000;
 
-export default function Compendium() {
+export default function GuestExperience() {
   const navigate = useNavigate();
 
   const scrollContainerRef = useRef(null);
@@ -457,7 +457,7 @@ export default function Compendium() {
               drop-shadow-lg
             "
           >
-            Guest Experience
+            Villa Information
           </h1>
         </div>
 

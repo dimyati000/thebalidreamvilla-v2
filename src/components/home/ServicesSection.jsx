@@ -7,10 +7,10 @@ import FacilitiesIcon from "../icons/FacilitiesIcon";
 import ServiceCard from "../services/ServiceCard";
 
 const services = [
-  { name: "GUEST EXPERIENCE",
+  { name: "VILLA INFORMATION",
     subtitle: "Hotel information and guest services",
     Icon: BookIcon, 
-    path: "/guest-experience" 
+    path: "/villa-information" 
   },
   { name: "RESORT GUIDELINES",
     subtitle: "Essential policies for refined stays",

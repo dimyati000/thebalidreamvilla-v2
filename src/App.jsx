@@ -29,7 +29,7 @@ function App() {
       <div className="w-full bg-stone-50 min-h-screen">
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/guest-experience" element={<GuestExperience />} />
+          <Route path="/villa-information" element={<GuestExperience />} />
           <Route path="/compendium-seminyak" element={<CompendiumSeminyak />} />
           <Route path="/compendium-suite" element={<CompendiumSuite />} />
           <Route path="/compendium-canggu" element={<CompendiumCanggu />} />
