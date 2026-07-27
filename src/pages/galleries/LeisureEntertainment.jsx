@@ -1,885 +1,638 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
-import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
 
 import BackIcon from "../../components/icons/BackIcon";
+
+import villa1 from "../../assets/villa/villa-1.webp";
+import villa2 from "../../assets/villa/villa-2.webp";
 
 import romantic from "../../assets/LeisureEntertainment/romantic-dinner.jpg";
 import dining from "../../assets/LeisureEntertainment/dining-experience.jpg";
 import canang from "../../assets/LeisureEntertainment/canang-making.jpg";
 import cooking from "../../assets/LeisureEntertainment/cooking-class.jpg";
+import canggu1 from "../../assets/GuestExperience/canggu/1.jpg";
+import canggu2 from "../../assets/GuestExperience/canggu/2.jpg";
 
-const LEISURE_IMAGES = [
+const backgroundImages = [villa1, villa2];
+
+const services = [
   {
-    id: "romantic-dinner",
-    image: romantic,
-    alt: "Romantic Dinner",
+    id: "curated-experiences",
+    name: "Curated Experiences",
+    flyers: [
+      romantic,
+      dining,
+    ],
   },
   {
-    id: "floating-dining",
-    image: dining,
-    alt: "Floating Dining Experience",
+    id: "exclusive-partnerships",
+    name: "COLLABRATION PROMOTION",
+    flyers: [
+      canang,
+      cooking,
+    ],
   },
   {
-    id: "canang-making",
-    image: canang,
-    alt: "Balinese Canang Making",
-  },
-  {
-    id: "cooking-class",
-    image: cooking,
-    alt: "Balinese Cooking Class",
+    id: "destination",
+    name: "DESTINATION",
+    flyers: [
+      canggu1,
+      canggu2,
+    ],
   },
 ];
 
-/*
- * Tiga set dipakai sebagai buffer internal
- * agar slider laptop tidak pernah kehabisan gambar.
- */
-const LOOP_ITEMS = Array.from(
-  { length: 3 },
-  (_, copyIndex) =>
-    LEISURE_IMAGES.map((item, imageIndex) => ({
-      ...item,
-      key: `${copyIndex}-${item.id}`,
-      originalIndex: imageIndex,
-    }))
-).flat();
+/* Menunggu lima detik sebelum auto-scroll dimulai */
+const AUTO_SCROLL_DELAY = 5000;
 
-const IMAGE_COUNT = LEISURE_IMAGES.length;
-const START_INDEX = IMAGE_COUNT;
+/* Kecepatan auto-scroll dalam pixel per detik */
+const AUTO_SCROLL_SPEED = 65;
 
-const POSTER_WIDTH = 1414;
-const POSTER_HEIGHT = 2000;
+/* Interval pergantian background */
+const BACKGROUND_DELAY = 5000;
 
-/* Slider laptop */
-const AUTO_SLIDE_DELAY = 5000;
-const SLIDE_DURATION = 1000;
-const SWIPE_THRESHOLD = 30;
-
-/* Auto-scroll mobile dan tablet */
-const MOBILE_AUTO_SCROLL_DELAY = 5000;
-const MOBILE_AUTO_SCROLL_SPEED = 32;
-const MOBILE_BREAKPOINT = 1024;
-
-function normalizeIndex(index) {
-  return (
-    ((index % IMAGE_COUNT) + IMAGE_COUNT) %
-    IMAGE_COUNT
-  );
-}
-
-export default function LeisureEntertainment() {
+export default function GuestExperience() {
   const navigate = useNavigate();
 
-  const viewportRef = useRef(null);
-  const trackRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const autoScrollTimeoutRef = useRef(null);
+  const autoScrollFrameRef = useRef(null);
+  const isAutoScrollingRef = useRef(false);
 
-  const currentIndexRef = useRef(START_INDEX);
-  const isAnimatingRef = useRef(false);
-
-  const pointerStartXRef = useRef(null);
-  const pointerIdRef = useRef(null);
-
-  const loadedImagesRef = useRef(new Set());
-
-  /*
-   * Refs khusus auto-scroll mobile/tablet.
-   */
-  const mobileScrollTimeoutRef = useRef(null);
-  const mobileScrollFrameRef = useRef(null);
-
-  const [currentIndex, setCurrentIndex] =
-    useState(START_INDEX);
-
-  const [slideDistance, setSlideDistance] =
+  const [backgroundIndex, setBackgroundIndex] =
     useState(0);
 
-  const [transitionEnabled, setTransitionEnabled] =
-    useState(false);
-
-  const [isInteracting, setIsInteracting] =
-    useState(false);
-
-  const [isPositionReady, setIsPositionReady] =
-    useState(false);
-
-  const [loadedImageCount, setLoadedImageCount] =
-    useState(0);
-
-  const allImagesLoaded =
-    loadedImageCount >= IMAGE_COUNT;
+  const [visible, setVisible] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
 
   /*
-   * =====================================================
-   * AUTO-SCROLL MOBILE DAN TABLET
-   * =====================================================
+   * Menghentikan timeout dan requestAnimationFrame
+   * auto-scroll yang sedang berjalan.
    */
-
-  /*
-   * Menghentikan timeout dan animasi auto-scroll.
-   */
-  const stopMobileAutoScroll = useCallback(() => {
-    if (mobileScrollTimeoutRef.current !== null) {
+  const clearAutoScroll = useCallback(() => {
+    if (autoScrollTimeoutRef.current) {
       window.clearTimeout(
-        mobileScrollTimeoutRef.current
+        autoScrollTimeoutRef.current
       );
 
-      mobileScrollTimeoutRef.current = null;
+      autoScrollTimeoutRef.current = null;
     }
 
-    if (mobileScrollFrameRef.current !== null) {
+    if (autoScrollFrameRef.current) {
       window.cancelAnimationFrame(
-        mobileScrollFrameRef.current
+        autoScrollFrameRef.current
       );
 
-      mobileScrollFrameRef.current = null;
+      autoScrollFrameRef.current = null;
     }
+
+    isAutoScrollingRef.current = false;
   }, []);
 
   /*
-   * Menunggu lima detik, lalu halaman bergerak
-   * perlahan ke bawah.
+   * Menjadwalkan auto-scroll setelah lima detik.
    */
-  const scheduleMobileAutoScroll =
-    useCallback(() => {
-      stopMobileAutoScroll();
+  const scheduleAutoScroll = useCallback(() => {
+    clearAutoScroll();
 
-      /*
-       * Hanya aktif di mobile dan tablet.
-       * Tailwind lg juga dimulai dari 1024px.
-       */
-      if (
-        window.innerWidth >= MOBILE_BREAKPOINT
-      ) {
-        return;
-      }
+    autoScrollTimeoutRef.current =
+      window.setTimeout(() => {
+        const container =
+          scrollContainerRef.current;
 
-      mobileScrollTimeoutRef.current =
-        window.setTimeout(() => {
-          const scrollingElement =
-            document.scrollingElement ||
-            document.documentElement;
+        if (!container) return;
 
-          let previousTime =
-            window.performance.now();
+        const maxScroll =
+          container.scrollHeight -
+          container.clientHeight;
 
-          const animateScroll = (currentTime) => {
-            /*
-             * Hentikan jika ukuran layar berubah
-             * menjadi laptop.
-             */
-            if (
-              window.innerWidth >=
-              MOBILE_BREAKPOINT
-            ) {
-              stopMobileAutoScroll();
-              return;
-            }
+        /*
+         * Tidak perlu auto-scroll jika isi
+         * belum lebih tinggi daripada container.
+         */
+        if (maxScroll <= 0) return;
 
-            /*
-             * Hentikan sementara ketika tab browser
-             * sedang tidak aktif.
-             */
-            if (document.hidden) {
-              stopMobileAutoScroll();
-              return;
-            }
+        isAutoScrollingRef.current = true;
 
-            const deltaTime =
-              (currentTime - previousTime) /
-              1000;
+        let previousTime =
+          window.performance.now();
 
-            previousTime = currentTime;
+        const animateScroll = (currentTime) => {
+          const currentContainer =
+            scrollContainerRef.current;
 
-            /*
-             * Dihitung ulang setiap frame karena
-             * gambar lazy dapat menambah tinggi page.
-             */
-            const maximumScroll =
-              scrollingElement.scrollHeight -
-              window.innerHeight;
+          if (!currentContainer) {
+            clearAutoScroll();
+            return;
+          }
 
-            const currentScroll =
-              scrollingElement.scrollTop;
+          const deltaTime =
+            (currentTime - previousTime) / 1000;
 
-            if (
-              maximumScroll <= 0 ||
-              currentScroll >=
-                maximumScroll - 1
-            ) {
-              scrollingElement.scrollTop =
-                Math.max(maximumScroll, 0);
+          previousTime = currentTime;
 
-              mobileScrollFrameRef.current =
-                null;
+          const currentMaxScroll =
+            currentContainer.scrollHeight -
+            currentContainer.clientHeight;
 
-              return;
-            }
+          const nextPosition =
+            currentContainer.scrollTop +
+            AUTO_SCROLL_SPEED * deltaTime;
 
-            const nextScroll =
-              currentScroll +
-              MOBILE_AUTO_SCROLL_SPEED *
-                deltaTime;
+          /*
+           * Berhenti ketika mencapai
+           * bagian paling bawah.
+           */
+          if (
+            nextPosition >= currentMaxScroll
+          ) {
+            currentContainer.scrollTop =
+              currentMaxScroll;
 
-            scrollingElement.scrollTop =
-              Math.min(
-                nextScroll,
-                maximumScroll
-              );
+            autoScrollFrameRef.current = null;
+            isAutoScrollingRef.current = false;
 
-            mobileScrollFrameRef.current =
-              window.requestAnimationFrame(
-                animateScroll
-              );
-          };
+            return;
+          }
 
-          mobileScrollFrameRef.current =
+          currentContainer.scrollTop =
+            nextPosition;
+
+          autoScrollFrameRef.current =
             window.requestAnimationFrame(
               animateScroll
             );
-        }, MOBILE_AUTO_SCROLL_DELAY);
-    }, [stopMobileAutoScroll]);
+        };
+
+        autoScrollFrameRef.current =
+          window.requestAnimationFrame(
+            animateScroll
+          );
+      }, AUTO_SCROLL_DELAY);
+  }, [clearAutoScroll]);
 
   /*
-   * Mengaktifkan auto-scroll ketika page dibuka.
-   *
-   * Saat user menyentuh, scroll manual, atau
-   * menekan keyboard:
-   * - auto-scroll berhenti
-   * - menunggu lima detik
-   * - berjalan kembali
+   * Animasi masuk card.
    */
   useEffect(() => {
-    const handleManualInteraction = () => {
-      scheduleMobileAutoScroll();
-    };
-
-    const handleResize = () => {
-      scheduleMobileAutoScroll();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        stopMobileAutoScroll();
-      } else {
-        scheduleMobileAutoScroll();
-      }
-    };
-
-    scheduleMobileAutoScroll();
-
-    window.addEventListener(
-      "wheel",
-      handleManualInteraction,
-      { passive: true }
-    );
-
-    window.addEventListener(
-      "touchstart",
-      handleManualInteraction,
-      { passive: true }
-    );
-
-    window.addEventListener(
-      "pointerdown",
-      handleManualInteraction,
-      { passive: true }
-    );
-
-    window.addEventListener(
-      "keydown",
-      handleManualInteraction
-    );
-
-    window.addEventListener(
-      "resize",
-      handleResize
-    );
-
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibilityChange
-    );
+    const showTimer = window.setTimeout(() => {
+      setVisible(true);
+    }, 100);
 
     return () => {
-      stopMobileAutoScroll();
-
-      window.removeEventListener(
-        "wheel",
-        handleManualInteraction
-      );
-
-      window.removeEventListener(
-        "touchstart",
-        handleManualInteraction
-      );
-
-      window.removeEventListener(
-        "pointerdown",
-        handleManualInteraction
-      );
-
-      window.removeEventListener(
-        "keydown",
-        handleManualInteraction
-      );
-
-      window.removeEventListener(
-        "resize",
-        handleResize
-      );
-
-      document.removeEventListener(
-        "visibilitychange",
-        handleVisibilityChange
-      );
+      window.clearTimeout(showTimer);
     };
-  }, [
-    scheduleMobileAutoScroll,
-    stopMobileAutoScroll,
-  ]);
-
-  /*
-   * =====================================================
-   * SLIDER LAPTOP DAN DESKTOP
-   * =====================================================
-   */
-
-  /*
-   * Menghitung lebar satu poster berdasarkan
-   * tinggi area gallery laptop.
-   */
-  const measureSlider = useCallback(() => {
-    const track = trackRef.current;
-
-    if (!track) return;
-
-    const firstSlide = track.querySelector(
-      "[data-leisure-slide]"
-    );
-
-    if (!firstSlide) return;
-
-    const measuredDistance =
-      firstSlide.getBoundingClientRect().width;
-
-    if (!measuredDistance) return;
-
-    const logicalIndex = normalizeIndex(
-      currentIndexRef.current
-    );
-
-    const safeMiddleIndex =
-      START_INDEX + logicalIndex;
-
-    setTransitionEnabled(false);
-    setSlideDistance(measuredDistance);
-    setCurrentIndex(safeMiddleIndex);
-
-    currentIndexRef.current =
-      safeMiddleIndex;
-
-    setIsPositionReady(true);
   }, []);
 
   /*
-   * Posisi awal berada di buffer tengah sebelum
-   * browser menampilkan slider.
-   */
-  useLayoutEffect(() => {
-    const frameId =
-      window.requestAnimationFrame(() => {
-        measureSlider();
-      });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [measureSlider]);
-
-  /*
-   * Hitung ulang slider saat ukuran viewport berubah.
+   * Background berubah otomatis.
    */
   useEffect(() => {
-    const viewport = viewportRef.current;
-
-    if (!viewport) return undefined;
-
-    const resizeObserver = new ResizeObserver(
-      () => {
-        setIsPositionReady(false);
-        measureSlider();
-      }
-    );
-
-    resizeObserver.observe(viewport);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [measureSlider]);
-
-  /*
-   * Menghitung hanya empat file unik,
-   * bukan semua salinan buffer.
-   */
-  const markImageLoaded = useCallback(
-    (imageId) => {
-      if (
-        loadedImagesRef.current.has(imageId)
-      ) {
-        return;
-      }
-
-      loadedImagesRef.current.add(imageId);
-
-      setLoadedImageCount(
-        loadedImagesRef.current.size
-      );
-    },
-    []
-  );
-
-  /*
-   * direction:
-   *  1 = berikutnya
-   * -1 = sebelumnya
-   */
-  const moveSlider = useCallback(
-    (direction) => {
-      if (!allImagesLoaded) return;
-      if (!isPositionReady) return;
-      if (!slideDistance) return;
-      if (isAnimatingRef.current) return;
-
-      isAnimatingRef.current = true;
-
-      const nextIndex =
-        currentIndexRef.current +
-        direction;
-
-      currentIndexRef.current =
-        nextIndex;
-
-      setTransitionEnabled(true);
-      setCurrentIndex(nextIndex);
-    },
-    [
-      allImagesLoaded,
-      isPositionReady,
-      slideDistance,
-    ]
-  );
-
-  const slideNext = useCallback(() => {
-    moveSlider(1);
-  }, [moveSlider]);
-
-  const slidePrevious = useCallback(() => {
-    moveSlider(-1);
-  }, [moveSlider]);
-
-  /*
-   * Setelah memasuki buffer luar, slider
-   * dipindahkan diam-diam ke buffer tengah.
-   */
-  const handleTransitionEnd = (event) => {
-    if (
-      event.target !== trackRef.current ||
-      event.propertyName !== "transform"
-    ) {
-      return;
-    }
-
-    let normalizedIndex =
-      currentIndexRef.current;
-
-    if (
-      normalizedIndex >=
-      START_INDEX + IMAGE_COUNT
-    ) {
-      normalizedIndex -= IMAGE_COUNT;
-    }
-
-    if (normalizedIndex < START_INDEX) {
-      normalizedIndex += IMAGE_COUNT;
-    }
-
-    if (
-      normalizedIndex !==
-      currentIndexRef.current
-    ) {
-      flushSync(() => {
-        setTransitionEnabled(false);
-        setCurrentIndex(normalizedIndex);
-
-        currentIndexRef.current =
-          normalizedIndex;
-      });
-    }
-
-    /*
-     * Memaksa browser menyelesaikan posisi reset
-     * sebelum gerakan berikutnya.
-     */
-    trackRef.current?.getBoundingClientRect();
-
-    window.requestAnimationFrame(() => {
-      isAnimatingRef.current = false;
-    });
-  };
-
-  /*
-   * Auto-slide laptop setiap lima detik.
-   */
-  useEffect(() => {
-    if (!allImagesLoaded) {
-      return undefined;
-    }
-
-    if (!isPositionReady) {
-      return undefined;
-    }
-
-    if (isInteracting) {
+    if (backgroundImages.length <= 1) {
       return undefined;
     }
 
     const intervalId = window.setInterval(() => {
-      /*
-       * Auto-slide horizontal hanya aktif
-       * pada ukuran laptop.
-       */
-      if (
-        window.innerWidth >=
-        MOBILE_BREAKPOINT
-      ) {
-        slideNext();
-      }
-    }, AUTO_SLIDE_DELAY);
+      setBackgroundIndex(
+        (currentIndex) =>
+          (currentIndex + 1) %
+          backgroundImages.length
+      );
+    }, BACKGROUND_DELAY);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [
-    allImagesLoaded,
-    isPositionReady,
-    isInteracting,
-    slideNext,
-  ]);
+  }, []);
 
-  const handlePointerDown = (event) => {
-    if (!allImagesLoaded) return;
-    if (!isPositionReady) return;
-    if (isAnimatingRef.current) return;
+  /*
+   * Ketika card dibuka:
+   * - elemen gambar baru dibuat
+   * - scroll dimulai dari posisi paling atas
+   * - auto-scroll dijadwalkan
+   */
+  useEffect(() => {
+    clearAutoScroll();
 
-    if (
-      event.pointerType === "mouse" &&
-      event.button !== 0
-    ) {
-      return;
+    if (!expandedId) {
+      return undefined;
     }
 
-    pointerStartXRef.current =
-      event.clientX;
+    /*
+     * Dua requestAnimationFrame memberi waktu
+     * kepada React untuk memasukkan gambar
+     * ke dalam DOM terlebih dahulu.
+     */
+    const firstFrame =
+      window.requestAnimationFrame(() => {
+        const secondFrame =
+          window.requestAnimationFrame(() => {
+            const container =
+              scrollContainerRef.current;
 
-    pointerIdRef.current =
-      event.pointerId;
+            if (!container) return;
 
-    setIsInteracting(true);
+            container.scrollTop = 0;
+            scheduleAutoScroll();
+          });
 
-    event.currentTarget.setPointerCapture?.(
-      event.pointerId
+        autoScrollFrameRef.current =
+          secondFrame;
+      });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      clearAutoScroll();
+    };
+  }, [
+    expandedId,
+    clearAutoScroll,
+    scheduleAutoScroll,
+  ]);
+
+  /*
+   * Bersihkan seluruh timer ketika
+   * pengguna meninggalkan halaman.
+   */
+  useEffect(() => {
+    return () => {
+      clearAutoScroll();
+    };
+  }, [clearAutoScroll]);
+
+  const handleCardToggle = (serviceId) => {
+    clearAutoScroll();
+
+    setExpandedId((currentId) =>
+      currentId === serviceId
+        ? null
+        : serviceId
     );
   };
 
-  const handlePointerUp = (event) => {
-    if (
-      pointerStartXRef.current === null
-    ) {
-      setIsInteracting(false);
-      return;
-    }
-
-    const swipeDistance =
-      event.clientX -
-      pointerStartXRef.current;
-
-    pointerStartXRef.current = null;
-    setIsInteracting(false);
-
-    if (
-      pointerIdRef.current !== null &&
-      event.currentTarget.hasPointerCapture?.(
-        pointerIdRef.current
-      )
-    ) {
-      event.currentTarget.releasePointerCapture(
-        pointerIdRef.current
-      );
-    }
-
-    pointerIdRef.current = null;
-
-    if (
-      Math.abs(swipeDistance) <
-      SWIPE_THRESHOLD
-    ) {
-      return;
-    }
-
-    if (swipeDistance < 0) {
-      slideNext();
-    } else {
-      slidePrevious();
-    }
+  /*
+   * Jika pengguna scroll atau menyentuh container,
+   * auto-scroll dihentikan lalu dimulai kembali
+   * setelah pengguna diam selama lima detik.
+   */
+  const handleManualInteraction = () => {
+    scheduleAutoScroll();
   };
 
-  const handlePointerCancel = () => {
-    pointerStartXRef.current = null;
-    pointerIdRef.current = null;
+  /*
+   * Jika gambar pertama baru selesai dimuat,
+   * jadwalkan ulang auto-scroll karena tinggi
+   * container sudah dapat dihitung.
+   */
+  const handleFirstImageLoad = () => {
+    if (!expandedId) return;
 
-    setIsInteracting(false);
+    scheduleAutoScroll();
   };
-
-  const trackIsReady =
-    isPositionReady &&
-    allImagesLoaded &&
-    slideDistance > 0;
 
   return (
     <div
       className="
+        relative
         min-h-screen
         w-full
+        overflow-hidden
+        bg-black
         font-cormorant
-        bg-gradient-to-br
-        from-[#6b5344]
-        to-[#4a3728]
-
-        lg:h-[100svh]
-        lg:min-h-0
-        lg:flex
-        lg:flex-col
-        lg:overflow-hidden
       "
     >
-      {/* NAVBAR */}
-      <div
-        className="
-          sticky
-          top-0
-          z-20
-          flex
-          items-center
-          gap-5
-          px-4
-          bg-black/40
-          backdrop-blur-md
-          border-b
-          border-white/10
-          lg:shrink-0
-        "
-      >
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          aria-label="Go back"
-          className="
-            w-10
-            h-10
-            flex-shrink-0
-            flex
-            items-center
-            justify-center
-            rounded-full
-            bg-white/10
-            border
-            border-white/20
-            text-[#f8ebd2]
-            hover:bg-white/20
-            transition
-          "
-        >
-          <BackIcon />
-        </button>
-
-        <h1
-          className="
-            text-white
-            text-[20px]
-            pt-[10px]
-            font-medium
-            tracking-[0.5px]
-            leading-tight
-          "
-        >
-          LEISURE &amp; ENTERTAINMENT
-        </h1>
-      </div>
-
-      {/* MOBILE DAN TABLET */}
-      <div className="flex flex-col lg:hidden">
-        {LEISURE_IMAGES.map(
-          (item, index) => (
-            <div
-              key={`mobile-${item.id}`}
-              className="w-full"
-            >
-              <img
-                src={item.image}
-                alt={item.alt}
-                width={POSTER_WIDTH}
-                height={POSTER_HEIGHT}
-                loading={
-                  index === 0
-                    ? "eager"
-                    : "lazy"
+      {/* BACKGROUND SLIDER */}
+      <div className="absolute inset-0 z-0">
+        {backgroundImages.map(
+          (image, index) => (
+            <img
+              key={`background-${index}`}
+              src={image}
+              alt=""
+              aria-hidden="true"
+              loading={
+                index === 0
+                  ? "eager"
+                  : "lazy"
+              }
+              decoding="async"
+              fetchPriority={
+                index === 0
+                  ? "high"
+                  : "low"
+              }
+              className={`
+                absolute
+                inset-0
+                h-full
+                w-full
+                object-cover
+                transition-opacity
+                duration-1000
+                ${
+                  index === backgroundIndex
+                    ? "opacity-100"
+                    : "opacity-0"
                 }
-                decoding="async"
-                fetchPriority={
-                  index === 0
-                    ? "high"
-                    : "low"
-                }
-                /*
-                 * Setelah gambar pertama siap,
-                 * hitung ulang timer auto-scroll.
-                 */
-                onLoad={
-                  index === 0
-                    ? scheduleMobileAutoScroll
-                    : undefined
-                }
-                className="
-                  block
-                  w-full
-                  h-auto
-                  object-cover
-                "
-              />
-            </div>
+              `}
+            />
           )
         )}
       </div>
 
-      {/* LAPTOP DAN DESKTOP */}
+      {/* BACKGROUND OVERLAY */}
       <div
-        ref={viewportRef}
         className="
-          hidden
-          lg:block
-          lg:flex-1
-          lg:min-h-0
-          w-full
-          overflow-hidden
-          select-none
-          bg-[#17100c]
+          absolute
+          inset-0
+          z-10
+          bg-black/40
+          bg-linear-to-b
+          from-black/20
+          via-transparent
+          to-[#1c140a]
+          backdrop-blur-[2px]
         "
-        style={{
-          touchAction: "pan-y",
+      />
 
-          cursor: trackIsReady
-            ? isInteracting
-              ? "grabbing"
-              : "grab"
-            : "default",
-        }}
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={
-          handlePointerCancel
-        }
-      >
-        {/* INFINITE BUFFER TRACK */}
+      {/* CONTENT */}
+      <div className="relative z-20 flex min-h-screen flex-col">
+        {/* HEADER */}
+        <div className="flex items-center gap-3 pl-4 pt-4">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            aria-label="Go back"
+            className="
+              flex
+              h-10
+              w-10
+              items-center
+              justify-center
+              rounded-full
+              border
+              border-white/20
+              bg-white/10
+              text-white
+              backdrop-blur-md
+              transition
+              hover:bg-white/20
+            "
+          >
+            <BackIcon />
+          </button>
+
+          <h1
+            className="
+              text-lg
+              font-light
+              uppercase
+              tracking-[0.2em]
+              text-white
+              drop-shadow-lg
+            "
+          >
+            Villa Information
+          </h1>
+        </div>
+
+        {/* SERVICES */}
         <div
-          ref={trackRef}
-          onTransitionEnd={
-            handleTransitionEnd
-          }
           className="
+            mt-10
             flex
-            h-full
-            w-max
-            will-change-transform
+            flex-1
+            flex-col
+            items-center
+            justify-center
+            px-4
+            pb-10
           "
-          style={{
-            opacity: trackIsReady ? 1 : 0,
-
-            transform: slideDistance
-              ? `translate3d(${
-                  -currentIndex *
-                  slideDistance
-                }px, 0, 0)`
-              : "translate3d(0, 0, 0)",
-
-            transition: transitionEnabled
-              ? `transform ${SLIDE_DURATION}ms cubic-bezier(0.16, 1, 0.3, 1)`
-              : "none",
-
-            willChange: "transform",
-            backfaceVisibility: "hidden",
-            WebkitBackfaceVisibility:
-              "hidden",
-          }}
         >
-          {LOOP_ITEMS.map(
-            (item, index) => (
-              <div
-                key={item.key}
-                data-leisure-slide
-                className="
-                  h-full
-                  shrink-0
-                  overflow-hidden
-                  bg-[#17100c]
-                "
-                style={{
-                  aspectRatio: `${POSTER_WIDTH} / ${POSTER_HEIGHT}`,
-                  flex: "0 0 auto",
-                }}
-              >
-                <img
-                  src={item.image}
-                  alt={item.alt}
-                  width={POSTER_WIDTH}
-                  height={POSTER_HEIGHT}
-                  draggable="false"
-                  loading="eager"
-                  decoding="async"
-                  fetchPriority={
-                    index >= START_INDEX &&
-                    index <
-                      START_INDEX +
-                        IMAGE_COUNT
-                      ? "high"
-                      : "auto"
-                  }
-                  onLoad={() =>
-                    markImageLoaded(item.id)
-                  }
-                  onError={() =>
-                    markImageLoaded(item.id)
-                  }
-                  className="
-                    block
-                    h-full
-                    w-full
-                    object-contain
-                    select-none
-                    pointer-events-none
-                  "
-                />
-              </div>
-            )
-          )}
+          <div
+            className="
+              grid
+              w-full
+              max-w-6xl
+              grid-cols-1
+              items-start
+              gap-4
+              md:grid-cols-3
+            "
+          >
+            {services.map(
+              (service, serviceIndex) => {
+                const isExpanded =
+                  expandedId === service.id;
+
+                return (
+                  <div
+                    key={service.id}
+                    className={`
+                      overflow-hidden
+                      rounded-xl
+                      border
+                      border-white/10
+                      bg-white/5
+                      p-6
+                      text-center
+                      backdrop-blur-md
+                      transition-all
+                      duration-500
+                      hover:bg-white/10
+                      ${
+                        visible
+                          ? "translate-y-0 opacity-100"
+                          : "translate-y-4 opacity-0"
+                      }
+                    `}
+                    style={{
+                      transitionDelay: `${
+                        serviceIndex * 150
+                      }ms`,
+                    }}
+                  >
+                    {/* CARD TOGGLE */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCardToggle(
+                          service.id
+                        )
+                      }
+                      aria-expanded={isExpanded}
+                      aria-controls={`gallery-${service.id}`}
+                      className="
+                        flex
+                        w-full
+                        flex-col
+                        items-center
+                        gap-4
+                        bg-transparent
+                        text-center
+                      "
+                    >
+                      <p className="svc-card-name">
+                        {service.name}
+                      </p>
+
+                      <span
+                        className={`
+                          text-[10px]
+                          text-white/50
+                          transition-transform
+                          duration-300
+                          ${
+                            isExpanded
+                              ? "rotate-180"
+                              : ""
+                          }
+                        `}
+                      >
+                        ▼
+                      </span>
+                    </button>
+
+                    {/* EXPANDED CONTENT */}
+                    <div
+                      id={`gallery-${service.id}`}
+                      className={`
+                        w-full
+                        overflow-hidden
+                        transition-all
+                        duration-500
+                        ease-in-out
+                        ${
+                          isExpanded
+                            ? "mt-4 max-h-[65vh] opacity-100"
+                            : "max-h-0 opacity-0"
+                        }
+                      `}
+                    >
+                      {/*
+                        Gambar hanya dibuat ketika card ini terbuka.
+
+                        Jika isExpanded false:
+                        - img tidak ada di DOM
+                        - browser tidak mengunduh file
+                        - memori browser lebih ringan
+                      */}
+                      {isExpanded && (
+                        <div
+                          ref={scrollContainerRef}
+                          onWheel={
+                            handleManualInteraction
+                          }
+                          onPointerDown={
+                            handleManualInteraction
+                          }
+                          onTouchStart={
+                            handleManualInteraction
+                          }
+                          onKeyDown={
+                            handleManualInteraction
+                          }
+                          onScroll={() => {
+                            /*
+                             * Jangan reset timer ketika scroll
+                             * berasal dari auto-scroll.
+                             */
+                            if (
+                              !isAutoScrollingRef.current
+                            ) {
+                              handleManualInteraction();
+                            }
+                          }}
+                          tabIndex={0}
+                          className="
+                            max-h-[65vh]
+                            w-full
+                            overflow-y-auto
+                            overscroll-contain
+                            outline-none
+                            [scrollbar-width:none]
+                            [-ms-overflow-style:none]
+                            [&::-webkit-scrollbar]:hidden
+                          "
+                          style={{
+                            scrollbarWidth: "none",
+                            msOverflowStyle: "none",
+                          }}
+                        >
+                          <div className="flex flex-col">
+                            {service.flyers.map(
+                              (
+                                image,
+                                imageIndex
+                              ) => (
+                                <img
+                                  key={`${service.id}-${imageIndex}`}
+                                  src={image}
+                                  alt={`${service.name} flyer ${
+                                    imageIndex + 1
+                                  }`}
+                                  /*
+                                   * Gambar pertama langsung dimuat
+                                   * setelah card dibuka.
+                                   *
+                                   * Gambar berikutnya baru dimuat
+                                   * ketika mendekati area scroll.
+                                   */
+                                  loading={
+                                    imageIndex === 0
+                                      ? "eager"
+                                      : "lazy"
+                                  }
+                                  decoding="async"
+                                  fetchPriority={
+                                    imageIndex === 0
+                                      ? "high"
+                                      : "low"
+                                  }
+                                  draggable="false"
+                                  onLoad={
+                                    imageIndex === 0
+                                      ? handleFirstImageLoad
+                                      : undefined
+                                  }
+                                  className="
+                                    block
+                                    h-auto
+                                    w-full
+                                    flex-none
+                                    object-contain
+                                  "
+                                />
+                              )
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+            )}
+          </div>
+        </div>
+
+        {/* FOOTER */}
+        <div className="p-6 text-center">
+          <p
+            className="
+              text-[10px]
+              uppercase
+              tracking-[3px]
+              text-white/40
+            "
+          >
+            The Bali Dream Villa
+          </p>
         </div>
       </div>
     </div>

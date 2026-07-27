@@ -6,7 +6,8 @@ import CompendiumSeminyak from "./pages/galleries/CompendiumSeminyak";
 import CompendiumSuite from "./pages/galleries/CompendiumSuite";
 import CompendiumCanggu from "./pages/galleries/CompendiumCanggu";
 import ResortGuidelines from "./pages/galleries/ResortGuidelines";
-import LeisureEntertainment from "./pages/galleries/LeisureEntertainment";
+import LeisureEntertainment from "./pages/galleries/LeisureEntertainment/Page";
+import DestinationGuide from "./pages/galleries/LeisureEntertainment/DestinationGuide";
 import Food from "./pages/galleries/Food";
 import Spa from "./pages/galleries/Spa";
 import PromotionPage from "./pages/PromotionPage";
@@ -34,6 +35,7 @@ function App() {
           <Route path="/compendium-suite" element={<CompendiumSuite />} />
           <Route path="/compendium-canggu" element={<CompendiumCanggu />} />
           <Route path="/leisure-entertainment" element={<LeisureEntertainment />} />
+          <Route path="/destination-guide" element={<DestinationGuide />} />
           <Route path="/resort-guidelines" element={<ResortGuidelines />} />
           <Route path="/food" element={<Food />} />
           <Route path="/spa" element={<Spa />} />
